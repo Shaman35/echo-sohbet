@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d0d0d">
+  <title>Echo</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232a2a2a'/%3E%3Cg stroke='%23fff' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 10v4M9.5 7v10M13 5v14M16.5 9v6M20 11v2'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- 1. Takma ad girişi -->
+  <main class="screen" id="nickView" hidden>
+    <div class="card card-nick">
+      <div class="brand">
+        <div class="brand-mark"><i data-icon="audio"></i></div>
+        <h1 class="title">Echo</h1>
+        <p class="subtitle">Devam etmek için bir takma ad belirleyin</p>
+      </div>
+
+      <form class="stack" id="nickForm" autocomplete="off" novalidate>
+        <div class="field">
+          <label class="label" for="nickInput">Takma Ad</label>
+          <input class="input" id="nickInput" type="text" maxlength="20" placeholder="Bir takma ad girin" spellcheck="false">
+          <span class="field-error" id="nickError" hidden>Lütfen geçerli bir takma ad girin.</span>
+        </div>
+        <button class="btn-primary" type="submit">
+          <span>Devam Et</span>
+          <i data-icon="arrowRight" class="nudge"></i>
+        </button>
+      </form>
+
+      <p class="footnote"><span class="dot"></span>Hızlı ve şifresiz katılım</p>
+    </div>
+  </main>
+
+  <!-- 2. Oda seçimi: Kur / Katıl -->
+  <main class="screen" id="choiceView" hidden>
+    <div class="card card-choice">
+      <header class="session">
+        <div class="session-user">
+          <div class="session-avatar"><i data-icon="user"></i><span class="presence"></span></div>
+          <div class="session-text">
+            <span class="label">Aktif Oturum</span>
+            <h1 class="greeting">
+              <span class="greeting-text">Hoş geldin, <span id="nickLabel"></span></span>
+              <button class="icon-btn" id="changeNickBtn" type="button" title="Takma adı değiştir" aria-label="Takma adı değiştir"><i data-icon="pencil"></i></button>
+            </h1>
+          </div>
+        </div>
+        <span class="chip"><span class="dot"></span>Hazır</span>
+      </header>
+
+      <div class="choices">
+        <button class="choice choice-primary" id="createBtn" type="button">
+          <span class="choice-icon"><i data-icon="plus"></i></span>
+          <span class="choice-text">
+            <span class="choice-title">Oda Kur</span>
+            <span class="choice-desc">Yeni ve boş bir alan başlatın</span>
+          </span>
+          <i data-icon="arrowRight" class="choice-trail"></i>
+        </button>
+
+        <div class="join-box">
+          <button class="choice" id="joinToggle" type="button" aria-expanded="false" aria-controls="joinPanel">
+            <span class="choice-icon"><i data-icon="login"></i></span>
+            <span class="choice-text">
+              <span class="choice-title">Odaya Katıl</span>
+              <span class="choice-desc">Davet anahtarıyla giriş yapın</span>
+            </span>
+            <i data-icon="chevronDown" class="choice-trail chevron"></i>
+          </button>
+          <form class="join-panel" id="joinPanel" hidden autocomplete="off" novalidate>
+            <div class="input-icon">
+              <i data-icon="key"></i>
+              <input class="input input-mono" id="joinInput" type="text" placeholder="Oda anahtarı veya davet bağlantısı" spellcheck="false" aria-label="Oda anahtarı">
+            </div>
+            <button class="btn-tertiary" id="joinSubmit" type="submit">
+              <span>Bağlan</span>
+              <i data-icon="arrowRight"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <p class="feedback" id="choiceFeedback" role="status" hidden></p>
+    </div>
+  </main>
+
+  <!-- 3. Sohbet odası: üstte ses, altta yazılı sohbet -->
+  <main class="room" id="roomView" hidden>
+    <section class="panel voice">
+      <div class="voice-head">
+        <button class="room-key" id="keyBtn" type="button" title="Oda anahtarını kopyala">
+          <span class="dot live"></span>
+          <span class="room-key-text" id="keyText"></span>
+          <i data-icon="copy" id="keyIcon"></i>
+        </button>
+        <span class="count" id="memberCount"></span>
+      </div>
+
+      <div class="members" id="members" aria-label="Katılımcılar"></div>
+
+      <div class="controls">
+        <button class="ctrl" id="connectBtn" type="button">
+          <i data-icon="mic" class="accent"></i><span>Konuşmaya Bağlan</span>
+        </button>
+        <button class="ctrl" id="micBtn" type="button" title="Mikrofonu Aç/Kapat" hidden>
+          <i data-icon="mic" class="accent" id="micIcon"></i><span id="micLabel">Mikrofon</span>
+        </button>
+        <button class="ctrl" id="deafBtn" type="button" title="Sesi Aç/Kapat" hidden>
+          <i data-icon="headphones" id="deafIcon"></i><span id="deafLabel">Kulaklık</span>
+        </button>
+        <button class="ctrl danger" id="leaveBtn" type="button">
+          <i data-icon="logout" id="leaveIcon"></i><span id="leaveLabel">Odadan Çık</span>
+        </button>
+      </div>
+
+      <p class="feedback error" id="roomHint" role="status" hidden></p>
+    </section>
+
+    <section class="panel chat">
+      <div class="chat-head">
+        <span>SOHBET</span>
+        <span class="sub">Gerçek zamanlı</span>
+      </div>
+      <div class="messages" id="messages" aria-live="polite">
+        <p class="empty" id="emptyState">Henüz mesaj yok</p>
+      </div>
+      <form class="chat-form" id="chatForm" autocomplete="off">
+        <input class="input chat-input" id="chatInput" type="text" maxlength="2000" placeholder="Bir mesaj yazın..." aria-label="Mesaj">
+        <button class="btn-send" type="submit" aria-label="Gönder">
+          <span>Gönder</span>
+          <i data-icon="send"></i>
+        </button>
+      </form>
+    </section>
+
+    <div id="audioSinks" hidden></div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
