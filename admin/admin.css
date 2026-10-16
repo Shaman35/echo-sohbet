@@ -163,6 +163,8 @@
 }
 .person .mono { font: 400 .6875rem/1 var(--mono); color: var(--muted); }
 .person .icon { font-size: 12px; color: var(--accent); }
+.person.mod { border: 1px solid rgba(74, 225, 118, .4); }
+.person.mod > span:nth-child(2) { color: var(--accent); }
 
 .timeline {
   list-style: none;
@@ -197,6 +199,10 @@
 .ev-chat .tag { color: var(--text-variant); }
 .ev-join .tag, .ev-room_open .tag { color: var(--accent); }
 .ev-voice_join .tag, .ev-voice_leave .tag { color: #93c5fd; }
+.ev-join_rejected .tag { color: var(--danger); }
+.ev-mod_join .tag, .ev-mod_leave .tag { color: var(--accent); }
+.ghost.enter { border-color: rgba(74, 225, 118, .4); color: var(--accent); }
+.ghost.enter:hover { background: rgba(74, 225, 118, .1); color: var(--accent); border-color: var(--accent); }
 .ev-body { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
 .ev-body .who { font-weight: 500; }
 .ev-body .n { margin: 0 6px 0 4px; font: 400 .6875rem/1 var(--mono); color: var(--muted); }

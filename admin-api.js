@@ -18,7 +18,7 @@ const KEY_RE = /^[A-Za-z0-9_-]{4,64}$/;
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
 
-function mountAdmin(app, { store, rooms, password }) {
+function mountAdmin(app, { store, rooms, password, issueModTicket }) {
   const router = express.Router();
 
   router.use((req, res, next) => {
@@ -150,13 +150,21 @@ function mountAdmin(app, { store, rooms, password }) {
         key,
         active: !!live,
         online: live
-          ? [...live.members.values()].map((m) => ({ num: m.num, nick: m.nick, voice: m.voice, ip: m.ip }))
+          ? [...live.members.values()].map((m) => ({ num: m.num, nick: m.nick, mod: m.mod, voice: m.voice, ip: m.ip }))
           : [],
         events,
       });
     } catch (err) {
       next(err);
     }
+  });
+
+  // Görünür moderatör olarak bir odaya girmek için tek kullanımlık bilet.
+  router.post('/api/rooms/:key/mod-ticket', requireAuth, (req, res) => {
+    const { key } = req.params;
+    if (!KEY_RE.test(key)) return res.status(400).json({ error: 'invalid-key' });
+    if (!rooms.has(key)) return res.status(409).json({ error: 'room-closed' });
+    res.json({ token: issueModTicket(key) });
   });
 
   router.use((err, req, res, next) => {

@@ -446,6 +446,17 @@ button:focus-visible { outline: 1px solid var(--text-variant); outline-offset: 2
 }
 .member.self.speaking .avatar { color: #000; }
 
+/* Moderatör: görünür, ayırt edici daire */
+.member.mod .avatar {
+  background: var(--container-high);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 10px rgba(74, 225, 118, .18);
+}
+.member.mod .avatar .icon { width: 24px; height: 24px; }
+.member.mod .name { color: var(--accent); font-weight: 500; }
+.member.mod.speaking .avatar { box-shadow: 0 0 12px var(--accent-glow); }
+
 .mic-badge {
   position: absolute;
   right: -4px;

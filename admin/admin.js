@@ -275,6 +275,25 @@
     $('layout').classList.remove('show-detail');
   });
 
+  $('enterBtn').addEventListener('click', async (e) => {
+    const key = state.selected;
+    if (!key) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const { token } = await api(`/rooms/${encodeURIComponent(key)}/mod-ticket`, { method: 'POST' });
+      // Yeni sekmede, görünür moderatör olarak odaya gir.
+      window.open(`/r/${encodeURIComponent(key)}?mod=${token}`, '_blank', 'noopener');
+    } catch (err) {
+      if (!(err instanceof AuthError)) {
+        alert(err.status === 409 ? 'Bu oda artık açık değil.' : 'Odaya girilemedi.');
+        if (state.selected === key) loadDetail(key, { silent: true });
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   $('refreshBtn').addEventListener('click', (e) => {
     const btn = e.currentTarget;
     btn.classList.remove('spin');
@@ -317,6 +336,9 @@
     status.textContent = d.active ? 'Aktif' : 'Kapalı';
     status.classList.toggle('live', d.active);
 
+    // Sadece açık odalara moderatör olarak girilebilir.
+    $('enterBtn').hidden = !d.active;
+
     const events = d.events;
     const chats = events.filter((e) => e.type === 'chat').length;
     const nicks = new Set(events.filter((e) => e.type === 'join').map((e) => e.nick));
@@ -330,8 +352,8 @@
     if (d.online.length) {
       online.replaceChildren(el('span', 'label', 'Şu an odada'));
       for (const m of d.online) {
-        const p = el('span', 'person');
-        p.append(el('span', 'mono', '#' + m.num), el('span', '', m.nick));
+        const p = el('span', 'person' + (m.mod ? ' mod' : ''));
+        p.append(m.mod ? icon('shield') : el('span', 'mono', '#' + m.num), el('span', '', m.mod ? 'Moderatör' : m.nick));
         if (m.voice) p.append(icon('mic'));
         p.append(el('span', 'mono', m.ip || ''));
         online.append(p);
@@ -345,6 +367,9 @@
     room_open: 'Oda açıldı',
     room_close: 'Oda kapandı',
     join: 'Katıldı',
+    join_rejected: 'Oda dolu',
+    mod_join: 'Moderatör girdi',
+    mod_leave: 'Moderatör çıktı',
     leave: 'Ayrıldı',
     voice_join: 'Sese girdi',
     voice_leave: 'Sesten çıktı',
@@ -409,6 +434,9 @@
       }
       case 'room_open':
         body.append(el('span', 'meta', 'Kuran IP: '), el('span', 'ip', e.ip || '—'));
+        break;
+      case 'join_rejected':
+        body.append(who(e), el('span', 'meta', 'giremedi · '), el('span', 'ip', e.ip || '—'));
         break;
       case 'room_close':
         body.append(el('span', 'meta', 'Odada kimse kalmadı'));

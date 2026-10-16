@@ -33,6 +33,7 @@
     phoneOff: '<path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><path d="M22 2 2 22"/>',
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
   };
 
@@ -98,11 +99,17 @@
 
   const route = location.pathname.match(/^\/r\/([A-Za-z0-9_-]{4,64})\/?$/);
   const pendingKey = route ? route[1] : null;
+
+  // Moderatör girişi: panel odayı /r/KEY?mod=BİLET olarak açar. Bileti URL'den alıp
+  // geçmişten hemen temizliyoruz (adres çubuğunda ve sekme başlığında görünmesin).
+  const modToken = pendingKey ? new URLSearchParams(location.search).get('mod') : null;
+  if (location.search) history.replaceState(null, '', location.pathname);
   if (!pendingKey && location.pathname !== '/') history.replaceState(null, '', '/');
 
   setupLanding();
 
-  if (pendingKey && loadNick()) initRoom(pendingKey, loadNick());
+  if (pendingKey && modToken) initRoom(pendingKey, null, modToken);
+  else if (pendingKey && loadNick()) initRoom(pendingKey, loadNick());
   else showNickView();
 
   function showNickView() {
@@ -186,9 +193,9 @@
       say(`${key} alanına bağlanılıyor...`);
       try {
         const res = await fetch('/api/rooms/' + encodeURIComponent(key));
-        const { exists } = await res.json();
-        if (!exists) {
-          say('Oda bulunamadı.', true);
+        const { exists, full, capacity } = await res.json();
+        if (!exists || full) {
+          say(exists ? `Oda dolu (en fazla ${capacity} kişi).` : 'Oda bulunamadı.', true);
           joinSubmit.disabled = false;
           return;
         }
@@ -210,9 +217,11 @@
 
   /* ---------------- 3. Oda ---------------- */
 
-  function initRoom(key, nick) {
+  function initRoom(key, nick, modToken = null) {
+    const asMod = modToken != null;
     showView('roomView');
-    document.title = 'Echo';
+    document.body.classList.toggle('mod-view', asMod);
+    document.title = asMod ? 'Moderatör · Echo' : 'Echo';
 
     const membersEl = $('members');
     const messagesEl = $('messages');
@@ -228,6 +237,8 @@
     const members = new Map(); // id -> { num, nick, voice, muted, speaking, el, badgeIcon }
     const peers = new Map(); // id -> { pc, audio, pendingCandidates }
     let self = null;
+    let capacity = 6;
+    let rejected = false;
     let historyRendered = false;
     let lastMessage = null; // gruplama için { id, ts }
 
@@ -246,7 +257,26 @@
     /* --- Bağlantı ve oda üyeliği --- */
 
     socket.on('connect', () => {
-      socket.emit('join', { key, nick }, (res) => {
+      socket.emit('join', { key, nick, modToken }, (res) => {
+        if (res?.error === 'mod-denied' || res?.error === 'room-closed') {
+          rejected = true;
+          socket.close();
+          hint(res.error === 'room-closed'
+            ? 'Bu oda artık açık değil.'
+            : 'Moderatör girişi geçersiz. Panelden tekrar deneyin.');
+          connectBtn.disabled = true;
+          chatInput.disabled = true;
+          return;
+        }
+        if (res?.error === 'room-full') {
+          // Yeniden bağlanma denemesi de reddedileceği için bağlantıyı kapat
+          rejected = true;
+          socket.close();
+          hint(`Bu oda dolu (en fazla ${res.capacity} kişi).`);
+          connectBtn.disabled = true;
+          chatInput.disabled = true;
+          return;
+        }
         if (!res || res.error) {
           hint('Odaya katılınamadı.');
           return;
@@ -255,6 +285,7 @@
         members.clear();
         membersEl.replaceChildren();
         self = res.self;
+        capacity = res.capacity || capacity;
         res.members.forEach(addMember);
         document.title = `${self.nick} · Echo`;
 
@@ -268,8 +299,19 @@
     });
 
     socket.on('disconnect', () => {
+      if (rejected) return;
       if (localStream) leaveVoice();
       systemMessage('bağlantı koptu');
+    });
+
+    // Moderatör tek başına kalınca (herkes çıkınca) oda kapanır.
+    socket.on('room-empty', () => {
+      rejected = true;
+      socket.close();
+      if (localStream) leaveVoice();
+      hint('Odada kimse kalmadı, oda kapandı.');
+      connectBtn.disabled = true;
+      chatInput.disabled = true;
     });
 
     socket.on('member-joined', (m) => {
@@ -304,18 +346,20 @@
 
     /* --- Katılımcı daireleri --- */
 
-    function addMember({ id, num, nick: memberNick, voice, muted: isMuted, speaking }) {
+    function addMember({ id, num, nick: memberNick, mod, voice, muted: isMuted, speaking }) {
       if (members.has(id)) removeMember(id);
       const isSelf = !!self && id === self.id;
 
       const el = document.createElement('div');
-      el.className = 'member' + (isSelf ? ' self' : '');
+      el.className = 'member' + (isSelf ? ' self' : '') + (mod ? ' mod' : '');
 
       const wrap = document.createElement('div');
       wrap.className = 'avatar-wrap';
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
-      avatar.textContent = num;
+      // Moderatör numara yerine kalkan işaretiyle görünür.
+      if (mod) avatar.appendChild(icon('shield', '', 2.2));
+      else avatar.textContent = num;
       const badge = document.createElement('span');
       badge.className = 'mic-badge';
       const badgeIcon = icon('mic', '', 3);
@@ -324,10 +368,10 @@
 
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = isSelf ? 'Sen' : memberNick;
+      name.textContent = mod ? (isSelf ? 'Moderatör (sen)' : 'Moderatör') : (isSelf ? 'Sen' : memberNick);
 
       el.append(wrap, name);
-      members.set(id, { num, nick: memberNick, voice: false, muted: false, speaking: false, el, badgeIcon });
+      members.set(id, { num, nick: memberNick, mod: !!mod, voice: false, muted: false, speaking: false, el, badgeIcon });
       updateMember(id, { voice, muted: isMuted, speaking });
       placeInOrder();
       updateCount();
@@ -352,17 +396,22 @@
       m.el.classList.toggle('speaking', voice && !isMuted && !!m.speaking);
       setIcon(m.badgeIcon, isMuted ? 'micOff' : 'mic');
       const state = !voice ? 'yazılı sohbette' : isMuted ? 'sesli · susturulmuş' : 'sesli';
-      m.el.title = `${m.num} · ${m.nick} · ${state}`;
+      m.el.title = m.mod ? `Moderatör · ${state}` : `${m.num} · ${m.nick} · ${state}`;
     }
 
     function placeInOrder() {
+      // Moderatör(ler) en sona; normal katılımcılar numara sırasına göre.
       [...members.values()]
-        .sort((a, b) => a.num - b.num)
+        .sort((a, b) => (a.mod - b.mod) || (a.num - b.num))
         .forEach((m) => membersEl.appendChild(m.el));
     }
 
     function updateCount() {
-      $('memberCount').textContent = `${members.size} Katılımcı`;
+      let normal = 0;
+      let mods = 0;
+      for (const m of members.values()) m.mod ? mods++ : normal++;
+      $('memberCount').textContent =
+        `${normal}/${capacity} Katılımcı` + (mods ? ` · ${mods} moderatör` : '');
     }
 
     /* --- Yazılı sohbet --- */
@@ -450,8 +499,9 @@
       if (localStream) {
         leaveVoice();
       } else {
+        rejected = true;
         socket.close();
-        location.assign('/');
+        location.assign(asMod ? '/admin' : '/');
       }
     });
 
@@ -468,11 +518,12 @@
     function setVoiceUI(connected) {
       connectBtn.disabled = false;
       connectBtn.hidden = connected;
+      connectBtn.querySelector('span').textContent = asMod ? 'Dinlemeye Bağlan' : 'Konuşmaya Bağlan';
       micBtn.hidden = !connected;
       deafBtn.hidden = !connected;
       setIcon($('leaveIcon'), connected ? 'phoneOff' : 'logout');
-      $('leaveLabel').textContent = connected ? 'Ayrıl' : 'Odadan Çık';
-      leaveBtn.title = connected ? 'Sesli sohbetten ayrıl' : 'Odadan çık';
+      $('leaveLabel').textContent = connected ? 'Ayrıl' : (asMod ? 'Panele Dön' : 'Odadan Çık');
+      leaveBtn.title = connected ? 'Sesli sohbetten ayrıl' : (asMod ? 'Panele dön' : 'Odadan çık');
       renderMicButton();
       renderDeafButton();
     }
@@ -496,15 +547,18 @@
         return;
       }
 
-      muted = false;
+      // Moderatör varsayılan olarak sessiz bağlanır: amaç dinlemek, konuşmak değil.
+      muted = asMod;
       deafened = false;
+      localStream.getAudioTracks().forEach((t) => { t.enabled = !muted; });
       startVAD();
-      updateMember(self.id, { voice: true, muted: false, speaking: false });
+      updateMember(self.id, { voice: true, muted, speaking: false });
       setVoiceUI(true);
 
       socket.emit('voice-join', (res) => {
         (res?.peers || []).forEach(callPeer);
       });
+      if (muted) socket.emit('mute', true);
     }
 
     function leaveVoice() {
