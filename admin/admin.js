@@ -370,6 +370,7 @@
     join_rejected: 'Oda dolu',
     mod_join: 'Moderatör girdi',
     mod_leave: 'Moderatör çıktı',
+    music_load: 'Müzik açıldı',
     leave: 'Ayrıldı',
     voice_join: 'Sese girdi',
     voice_leave: 'Sesten çıktı',
@@ -441,6 +442,17 @@
       case 'room_close':
         body.append(el('span', 'meta', 'Odada kimse kalmadı'));
         break;
+      case 'music_load': {
+        body.append(who(e));
+        if (e.text) {
+          const a = el('a', 'ytlink', e.text);
+          a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(e.text);
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          body.append(a);
+        }
+        break;
+      }
       default:
         body.append(who(e));
     }

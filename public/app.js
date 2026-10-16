@@ -34,6 +34,10 @@
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+    music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+    stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
   };
 
@@ -253,6 +257,7 @@
     setupKeyCopy(key);
 
     const socket = io();
+    const music = setupMusic(socket);
 
     /* --- Bağlantı ve oda üyeliği --- */
 
@@ -295,6 +300,7 @@
         } else {
           systemMessage('yeniden bağlandı');
         }
+        music.applyRemote(res.music);
       });
     });
 
@@ -336,6 +342,8 @@
     socket.on('speaking', ({ id, speaking }) => updateMember(id, { speaking }));
 
     socket.on('chat', renderMessage);
+
+    socket.on('music', (state) => music.applyRemote(state));
 
     socket.on('signal', handleSignal);
 
@@ -742,5 +750,216 @@
       ta.remove();
       return ok;
     }
+  }
+
+  /* ---------------- Senkron müzik (YouTube IFrame API) ---------------- */
+
+  const YT_ID_RE = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|live\/|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+  const DRIFT_TOLERANCE_S = 1.5;
+
+  function parseVideoId(url) {
+    if (typeof url !== 'string') return null;
+    const m = url.match(YT_ID_RE);
+    if (m) return m[1];
+    const bare = url.trim();
+    return /^[A-Za-z0-9_-]{11}$/.test(bare) ? bare : null;
+  }
+
+  // YouTube IFrame API'sini tek sefer yükler.
+  let ytApiPromise = null;
+  function loadYouTubeApi() {
+    if (ytApiPromise) return ytApiPromise;
+    ytApiPromise = new Promise((resolve) => {
+      if (window.YT && window.YT.Player) return resolve(window.YT);
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof prev === 'function') try { prev(); } catch {}
+        resolve(window.YT);
+      };
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    });
+    return ytApiPromise;
+  }
+
+  function setupMusic(socket) {
+    const panel = $('musicPanel');
+    const form = $('musicForm');
+    const urlInput = $('musicUrl');
+    const playerWrap = $('playerWrap');
+    const controls = $('musicControls');
+    const nowEl = $('musicNow');
+    const collapseBtn = $('musicCollapse');
+    const unlockBtn = $('musicUnlock');
+    const toggleBtn = $('musicToggle');
+    const stopBtn = $('musicStop');
+
+    let player = null;
+    let playerReady = false;
+    let pendingTarget = null; // oynatıcı hazır olmadan gelen durum
+    let videoId = null;
+    let paused = true;
+    let applyingRemote = false; // uzak durum uygulanırken yerel olay yaymayı engeller
+    let playFromPos = 0; // referans konum (saniye)
+    let playFromTime = 0; // referansın alındığı yerel an (ms)
+    let blockCheck = null;
+
+    const YTP = () => window.YT && window.YT.PlayerState;
+    const expectedPos = () => paused ? playFromPos : playFromPos + (Date.now() - playFromTime) / 1000;
+
+    function setRef(pos, isPaused) {
+      playFromPos = Math.max(0, pos);
+      playFromTime = Date.now();
+      paused = isPaused;
+    }
+
+    function showPanel(active) {
+      playerWrap.hidden = !active;
+      controls.hidden = !active;
+      collapseBtn.hidden = !active;
+      nowEl.hidden = !active;
+      if (!active) panel.classList.remove('collapsed');
+    }
+
+    function setNow(text) { nowEl.textContent = text; }
+
+    function renderToggle() {
+      const playing = !paused;
+      setIcon($('musicToggleIcon'), playing ? 'pause' : 'play');
+      $('musicToggleLabel').textContent = playing ? 'Duraklat' : 'Çal';
+    }
+
+    async function ensurePlayer() {
+      if (player || !window) return;
+      const YT = await loadYouTubeApi();
+      if (player) return; // yarış durumu
+      player = new YT.Player('ytplayer', {
+        width: '100%',
+        height: '100%',
+        playerVars: { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, playsinline: 1, origin: location.origin },
+        events: {
+          onReady: () => {
+            playerReady = true;
+            if (pendingTarget) { const t = pendingTarget; pendingTarget = null; applyTarget(t); }
+          },
+          onStateChange: onPlayerState,
+        },
+      });
+    }
+
+    function onPlayerState(e) {
+      const S = YTP();
+      if (!S) return;
+      if (e.data === S.PLAYING) { paused = false; renderToggle(); }
+      else if (e.data === S.PAUSED) { paused = true; renderToggle(); }
+      if (e.data === S.PLAYING || e.data === S.BUFFERING) { unlockBtn.hidden = true; }
+      // Video başlığı hazır olduğunda göster
+      if (e.data === S.PLAYING || e.data === S.CUED) {
+        const title = player.getVideoData && player.getVideoData().title;
+        if (title) setNow('♪ ' + title);
+      }
+    }
+
+    // Uzaktan (veya katılırken) gelen durum.
+    function applyRemote(state) {
+      if (!state) { clearLocal(); return; }
+      const elapsed = state.paused ? 0 : Math.max(0, (state.serverNow - state.at) / 1000);
+      applyTarget({ videoId: state.videoId, paused: state.paused, position: state.position + elapsed, by: state.by });
+    }
+
+    function applyTarget(t) {
+      showPanel(true);
+      setRef(t.position, t.paused);
+      renderToggle();
+      setNow(t.by ? `♪ ${t.by} açtı` : '♪ müzik');
+      if (!playerReady) { pendingTarget = t; ensurePlayer(); return; }
+
+      applyingRemote = true;
+      if (t.videoId !== videoId) {
+        videoId = t.videoId;
+        if (t.paused) player.cueVideoById(t.videoId, t.position);
+        else player.loadVideoById(t.videoId, t.position);
+      } else {
+        if (Math.abs((player.getCurrentTime() || 0) - t.position) > DRIFT_TOLERANCE_S) {
+          player.seekTo(t.position, true);
+        }
+        if (t.paused) player.pauseVideo();
+        else player.playVideo();
+      }
+      clearTimeout(blockCheck);
+      blockCheck = setTimeout(() => {
+        applyingRemote = false;
+        if (!paused) verifyPlaying();
+      }, 1000);
+    }
+
+    // Tarayıcı, kullanıcı etkileşimi olmadan sesli oynatmayı engellemiş olabilir.
+    function verifyPlaying() {
+      const S = YTP();
+      if (!player || !S) return;
+      const st = player.getPlayerState();
+      if (st !== S.PLAYING && st !== S.BUFFERING) unlockBtn.hidden = false;
+    }
+
+    function clearLocal() {
+      videoId = null;
+      pendingTarget = null;
+      paused = true;
+      showPanel(false);
+      unlockBtn.hidden = true;
+      if (player && playerReady) { try { player.stopVideo(); } catch {} }
+    }
+
+    /* Yerel kontroller */
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = parseVideoId(urlInput.value);
+      if (!id) {
+        urlInput.value = '';
+        urlInput.placeholder = 'Geçerli bir YouTube bağlantısı değil';
+        setTimeout(() => { urlInput.placeholder = 'YouTube bağlantısı yapıştır'; }, 2500);
+        return;
+      }
+      urlInput.value = '';
+      socket.emit('music', { action: 'load', url: id });
+      applyTarget({ videoId: id, paused: false, position: 0, by: 'sen' });
+    });
+
+    toggleBtn.addEventListener('click', () => {
+      if (!videoId || !playerReady) return;
+      const pos = player.getCurrentTime() || 0;
+      if (!paused) {
+        setRef(pos, true);
+        player.pauseVideo();
+        socket.emit('music', { action: 'pause', position: pos });
+      } else {
+        setRef(pos, false);
+        player.playVideo();
+        socket.emit('music', { action: 'play', position: pos });
+      }
+      renderToggle();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      socket.emit('music', { action: 'stop' });
+      clearLocal();
+    });
+
+    unlockBtn.addEventListener('click', () => {
+      unlockBtn.hidden = true;
+      if (!player || !playerReady) return;
+      applyingRemote = true;
+      player.seekTo(expectedPos(), true);
+      player.playVideo();
+      setTimeout(() => { applyingRemote = false; }, 800);
+    });
+
+    collapseBtn.addEventListener('click', () => {
+      panel.classList.toggle('collapsed');
+    });
+
+    return { applyRemote };
   }
 })();

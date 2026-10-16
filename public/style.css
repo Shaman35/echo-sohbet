@@ -522,6 +522,82 @@ button:focus-visible { outline: 1px solid var(--text-variant); outline-offset: 2
 
 .voice .feedback { margin-top: -8px; }
 
+/* Senkron müzik */
+.music { display: flex; flex-direction: column; gap: 14px; }
+
+.music-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 400 .75rem/1rem var(--mono);
+  color: var(--muted);
+}
+.music-head > span:first-child { flex: none; }
+.music-head .sub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.music-collapse {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  transition: color .15s, background-color .15s;
+}
+.music-collapse:hover { color: var(--text); background: var(--container); }
+.music-collapse .icon { font-size: 15px; transition: transform .2s; }
+.music.collapsed .music-collapse .icon { transform: rotate(-90deg); }
+
+.music-form { display: flex; gap: 8px; }
+.input-wrap { position: relative; flex: 1; display: flex; align-items: center; }
+.input-wrap > .icon { position: absolute; left: 12px; font-size: 16px; color: var(--muted); pointer-events: none; }
+.music-input { padding: 10px 14px 10px 36px; border: 1px solid var(--border); border-radius: 12px; background: var(--container); }
+.music-input:focus { border-color: var(--muted); }
+.music-input::placeholder { color: rgba(142, 145, 146, .55); }
+.music-form .btn-send { border-radius: 12px; }
+
+.player-wrap { position: relative; }
+.player-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 220px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #000;
+  border: 1px solid var(--border);
+}
+.player-box > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+.music.collapsed .player-wrap { display: none; }
+
+.unlock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  font: 500 .875rem/1 var(--sans);
+  backdrop-filter: blur(2px);
+}
+.unlock .icon { font-size: 18px; color: var(--accent); }
+
+.music-controls { display: flex; gap: 8px; }
+.music.collapsed .music-controls { margin-top: 0; }
+
 /* Yazılı sohbet */
 .chat { display: flex; flex-direction: column; height: 460px; }
 

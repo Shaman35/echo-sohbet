@@ -123,6 +123,29 @@
       <p class="feedback error" id="roomHint" role="status" hidden></p>
     </section>
 
+    <section class="panel music" id="musicPanel">
+      <div class="music-head">
+        <span>MÜZİK</span>
+        <span class="sub" id="musicNow" hidden></span>
+        <button class="music-collapse" id="musicCollapse" type="button" hidden aria-label="Oynatıcıyı gizle/göster"><i data-icon="chevronDown"></i></button>
+      </div>
+      <form class="music-form" id="musicForm" autocomplete="off">
+        <div class="input-wrap">
+          <i data-icon="music"></i>
+          <input class="input music-input" id="musicUrl" type="text" placeholder="YouTube bağlantısı yapıştır" spellcheck="false" aria-label="YouTube bağlantısı">
+        </div>
+        <button class="btn-send" type="submit"><span>Çal</span><i data-icon="play"></i></button>
+      </form>
+      <div class="player-wrap" id="playerWrap" hidden>
+        <div class="player-box"><div id="ytplayer"></div></div>
+        <button class="unlock" id="musicUnlock" type="button" hidden><i data-icon="play"></i><span>Müziği başlat</span></button>
+      </div>
+      <div class="music-controls" id="musicControls" hidden>
+        <button class="ctrl" id="musicToggle" type="button"><i data-icon="pause" id="musicToggleIcon"></i><span id="musicToggleLabel">Duraklat</span></button>
+        <button class="ctrl danger" id="musicStop" type="button"><i data-icon="stop"></i><span>Durdur</span></button>
+      </div>
+    </section>
+
     <section class="panel chat">
       <div class="chat-head">
         <span>SOHBET</span>

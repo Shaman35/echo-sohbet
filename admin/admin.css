@@ -201,6 +201,9 @@
 .ev-voice_join .tag, .ev-voice_leave .tag { color: #93c5fd; }
 .ev-join_rejected .tag { color: var(--danger); }
 .ev-mod_join .tag, .ev-mod_leave .tag { color: var(--accent); }
+.ev-music_load .tag { color: #c4b5fd; }
+.ytlink { color: #93c5fd; font-family: var(--mono); font-size: .75rem; text-decoration: none; }
+.ytlink:hover { text-decoration: underline; }
 .ghost.enter { border-color: rgba(74, 225, 118, .4); color: var(--accent); }
 .ghost.enter:hover { background: rgba(74, 225, 118, .1); color: var(--accent); border-color: var(--accent); }
 .ev-body { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }

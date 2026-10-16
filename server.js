@@ -20,6 +20,10 @@ const MAX_NICK_LENGTH = 20;
 const MOD_NICK = 'Moderatör';
 const MOD_TICKET_TTL_MS = 2 * 60 * 1000;
 
+function numOr(v, fallback) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.min(v, 1e6) : fallback;
+}
+
 function cleanNick(nick) {
   if (typeof nick !== 'string') return '';
   return nick.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NICK_LENGTH);
@@ -62,6 +66,25 @@ function consumeModTicket(token, roomKey) {
   if (!t) return false;
   modTickets.delete(token);
   return t.exp >= Date.now() && t.key === roomKey;
+}
+
+// YouTube bağlantısından 11 karakterlik video kimliğini çıkarır; geçersizse null.
+const YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+function parseYouTubeId(input) {
+  if (typeof input !== 'string') return null;
+  const s = input.trim().slice(0, 500);
+  if (YT_ID_RE.test(s)) return s;
+  let url;
+  try { url = new URL(/^https?:\/\//i.test(s) ? s : 'https://' + s); } catch { return null; }
+  const host = url.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+  let id = null;
+  if (host === 'youtu.be') {
+    id = url.pathname.slice(1).split('/')[0];
+  } else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (url.pathname === '/watch') id = url.searchParams.get('v');
+    else id = (url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/) || [])[1];
+  }
+  return id && YT_ID_RE.test(id) ? id : null;
 }
 
 // Oda kapasitesi yalnızca normal katılımcıları sayar; moderatör sınıra dahil değildir.
@@ -142,7 +165,7 @@ io.on('connection', (socket) => {
       return ack({ error: 'room-closed' });
     }
     if (!room) {
-      room = { members: new Map(), history: [] };
+      room = { members: new Map(), history: [], music: null };
       rooms.set(requestedKey, room);
       record(requestedKey, 'room_open', { ip });
     }
@@ -163,7 +186,52 @@ io.on('connection', (socket) => {
       members: serializeMembers(room),
       history: room.history,
       capacity: ROOM_CAPACITY,
+      music: room.music ? { ...room.music, serverNow: Date.now() } : null,
     });
+  });
+
+  // Senkron müzik: odadaki herkes aynı YouTube videosunu aynı konumda dinler.
+  // Durum sunucuda tutulur; sonradan katılan doğru yerden başlar.
+  socket.on('music', (payload) => {
+    const room = currentRoom();
+    const m = me();
+    if (!room || !m || !payload || typeof payload.action !== 'string') return;
+    const now = Date.now();
+
+    switch (payload.action) {
+      case 'load': {
+        const videoId = parseYouTubeId(payload.url);
+        if (!videoId) return;
+        room.music = { videoId, paused: false, position: 0, at: now, by: m.nick };
+        record(key, 'music_load', { num: m.num, nick: m.nick, text: videoId });
+        break;
+      }
+      case 'play':
+        if (!room.music) return;
+        room.music.position = numOr(payload.position, room.music.position);
+        room.music.paused = false;
+        room.music.at = now;
+        break;
+      case 'pause':
+        if (!room.music) return;
+        room.music.position = numOr(payload.position, room.music.position);
+        room.music.paused = true;
+        room.music.at = now;
+        break;
+      case 'seek':
+        if (!room.music) return;
+        room.music.position = numOr(payload.position, room.music.position);
+        room.music.at = now;
+        break;
+      case 'stop':
+        if (!room.music) return;
+        room.music = null;
+        break;
+      default:
+        return;
+    }
+    // Gönderen durumu zaten kendi tarafında uyguladı; yalnızca diğerlerine ilet.
+    socket.to(key).emit('music', room.music ? { ...room.music, serverNow: now } : null);
   });
 
   socket.on('chat', (text) => {
