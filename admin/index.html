@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0d0d0d">
+  <title>Echo · Yönetim</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232a2a2a'/%3E%3Cg stroke='%23fff' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 10v4M9.5 7v10M13 5v14M16.5 9v6M20 11v2'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <!-- Giriş -->
+  <main class="screen" id="loginView" hidden>
+    <div class="card card-nick">
+      <div class="brand">
+        <div class="brand-mark"><i data-icon="shield"></i></div>
+        <h1 class="title">Echo Yönetim</h1>
+        <p class="subtitle">Bu alan yalnızca site sahibine açıktır</p>
+      </div>
+      <form class="stack" id="loginForm" autocomplete="on" novalidate>
+        <input type="text" name="username" value="admin" autocomplete="username" hidden>
+        <div class="field">
+          <label class="label" for="passwordInput">Şifre</label>
+          <input class="input" id="passwordInput" name="password" type="password" autocomplete="current-password" placeholder="Yönetici şifresi">
+          <span class="field-error" id="loginError" hidden></span>
+        </div>
+        <button class="btn-primary" id="loginBtn" type="submit">
+          <span>Giriş Yap</span>
+          <i data-icon="arrowRight" class="nudge"></i>
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <!-- Panel -->
+  <div class="admin" id="panelView" hidden>
+    <header class="topbar">
+      <div class="brand-row">
+        <span class="brand-mark sm"><i data-icon="audio"></i></span>
+        <span class="topbar-title">Echo</span>
+        <span class="topbar-sub">Yönetim</span>
+      </div>
+      <div class="stats">
+        <span class="chip"><span class="dot"></span><span id="liveRooms">0</span>&nbsp;aktif oda</span>
+        <span class="chip"><span id="liveUsers">0</span>&nbsp;çevrimiçi</span>
+        <span class="chip" id="storageChip"></span>
+      </div>
+      <button class="ghost" id="logoutBtn" type="button"><i data-icon="logout"></i><span>Çıkış</span></button>
+    </header>
+
+    <div class="layout" id="layout">
+      <aside class="pane rooms-pane">
+        <div class="pane-head">
+          <div class="search">
+            <i data-icon="search"></i>
+            <input class="input" id="searchInput" type="search" placeholder="Anahtar, takma ad, mesaj veya IP ara" spellcheck="false" aria-label="Ara">
+          </div>
+        </div>
+        <div class="room-list" id="roomList"></div>
+        <button class="ghost more" id="moreBtn" type="button" hidden>Daha fazla yükle</button>
+      </aside>
+
+      <section class="pane detail-pane">
+        <p class="placeholder" id="placeholder">Kayıtları görmek için soldan bir oda seçin</p>
+
+        <div class="detail" id="detailBody" hidden>
+          <button class="ghost back" id="backBtn" type="button"><i data-icon="arrowLeft"></i><span>Odalar</span></button>
+
+          <div class="detail-head">
+            <div class="detail-title">
+              <span class="label">Oda</span>
+              <h2 class="detail-key"><span id="detailKey"></span><span class="status" id="detailStatus"></span></h2>
+              <p class="detail-meta" id="detailMeta"></p>
+            </div>
+            <div class="detail-actions">
+              <button class="seg" type="button" data-filter="all" aria-pressed="true">Tümü</button>
+              <button class="seg" type="button" data-filter="chat" aria-pressed="false">Mesajlar</button>
+              <button class="ghost icon-only" id="refreshBtn" type="button" title="Yenile" aria-label="Yenile"><i data-icon="refresh"></i></button>
+            </div>
+          </div>
+
+          <div class="online" id="onlineBox" hidden></div>
+
+          <ol class="timeline" id="timeline"></ol>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/admin/static/admin.js"></script>
+</body>
+</html>

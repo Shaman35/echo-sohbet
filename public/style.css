@@ -188,6 +188,14 @@ button:focus-visible { outline: 1px solid var(--text-variant); outline-offset: 2
   color: var(--muted);
 }
 
+.notice {
+  margin-top: -12px;
+  text-align: center;
+  font-size: .6875rem;
+  line-height: 1rem;
+  color: #71717a;
+}
+
 /* 2. Oda seçimi */
 .card-choice { max-width: 448px; background: var(--card-choice); }
 

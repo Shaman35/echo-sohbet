@@ -4,9 +4,12 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
+const { createStore } = require('./store');
+const { mountAdmin } = require('./admin-api');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const LOG_RETENTION_DAYS = Math.max(1, parseInt(process.env.LOG_RETENTION_DAYS, 10) || 30);
 const KEY_RE = /^[A-Za-z0-9_-]{4,64}$/;
 const HISTORY_LIMIT = 200;
 const MAX_MESSAGE_LENGTH = 2000;
@@ -17,7 +20,27 @@ function cleanNick(nick) {
   return nick.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NICK_LENGTH);
 }
 
+const store = createStore({
+  databaseUrl: process.env.DATABASE_URL,
+  dataDir: path.join(__dirname, 'data'),
+});
+
+// Kayıt yazımı sohbeti asla bloklamaz; hata olursa sadece günlüğe düşer.
+function record(room, type, fields = {}) {
+  store.log({ room, type, ts: Date.now(), ...fields }).catch((err) => {
+    console.error('[log]', err.message);
+  });
+}
+
+// Render gibi bir proxy arkasında gerçek istemci IP'si X-Forwarded-For'un ilk girdisidir.
+function clientIp(socket) {
+  const fwd = socket.handshake.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd) return fwd.split(',')[0].trim();
+  return socket.handshake.address;
+}
+
 const app = express();
+app.set('trust proxy', true);
 app.use(express.static(PUBLIC_DIR));
 
 // Odaya Katıl akışı, yanlış yazılmış bir anahtarla boş oda açılmasın diye önce bunu sorar.
@@ -31,8 +54,10 @@ app.get('/r/:key', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html'
 const server = http.createServer(app);
 const io = new Server(server);
 
-// key -> { members: Map<socketId, { num, voice, speaking }>, history: [] }
+// key -> { members: Map<socketId, { num, nick, ip, voice, muted, speaking }>, history: [] }
 const rooms = new Map();
+
+mountAdmin(app, { store, rooms, password: process.env.ADMIN_PASSWORD });
 
 function lowestFreeNumber(room) {
   const used = new Set([...room.members.values()].map((m) => m.num));
@@ -54,6 +79,7 @@ function serializeMembers(room) {
 
 io.on('connection', (socket) => {
   let key = null;
+  const ip = clientIp(socket);
 
   const currentRoom = () => (key ? rooms.get(key) : null);
   const me = () => currentRoom()?.members.get(socket.id) || null;
@@ -70,13 +96,15 @@ io.on('connection', (socket) => {
     if (!room) {
       room = { members: new Map(), history: [] };
       rooms.set(requestedKey, room);
+      record(requestedKey, 'room_open', { ip });
     }
 
     const num = lowestFreeNumber(room);
     const nick = cleanNick(payload.nick) || String(num);
-    room.members.set(socket.id, { num, nick, voice: false, muted: false, speaking: false });
+    room.members.set(socket.id, { num, nick, ip, voice: false, muted: false, speaking: false });
     key = requestedKey;
     socket.join(key);
+    record(key, 'join', { num, nick, ip, text: socket.handshake.headers['user-agent']?.slice(0, 300) });
 
     socket.to(key).emit('member-joined', { id: socket.id, num, nick, voice: false, muted: false, speaking: false });
     ack({ self: { id: socket.id, num, nick }, members: serializeMembers(room), history: room.history });
@@ -93,6 +121,7 @@ io.on('connection', (socket) => {
     room.history.push(msg);
     if (room.history.length > HISTORY_LIMIT) room.history.shift();
     io.to(key).emit('chat', msg);
+    record(key, 'chat', { num: m.num, nick: m.nick, text: clean });
   });
 
   socket.on('voice-join', (ack) => {
@@ -110,6 +139,7 @@ io.on('connection', (socket) => {
     m.speaking = false;
     socket.to(key).emit('voice-state', { id: socket.id, voice: true, muted: false });
     ack({ peers });
+    record(key, 'voice_join', { num: m.num, nick: m.nick });
   });
 
   socket.on('voice-leave', () => {
@@ -119,6 +149,7 @@ io.on('connection', (socket) => {
     m.muted = false;
     m.speaking = false;
     socket.to(key).emit('voice-state', { id: socket.id, voice: false, muted: false });
+    record(key, 'voice_leave', { num: m.num, nick: m.nick });
   });
 
   socket.on('mute', (muted) => {
@@ -146,13 +177,39 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     const room = currentRoom();
-    if (!room) return;
+    const m = me();
+    if (!room || !m) return;
     room.members.delete(socket.id);
     socket.to(key).emit('member-left', { id: socket.id });
-    if (room.members.size === 0) rooms.delete(key);
+    record(key, 'leave', { num: m.num, nick: m.nick });
+    if (room.members.size === 0) {
+      rooms.delete(key);
+      record(key, 'room_close');
+    }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Mat Sohbet çalışıyor: http://localhost:${PORT}`);
+async function purgeOldLogs() {
+  try {
+    const removed = await store.purgeOlderThan(LOG_RETENTION_DAYS);
+    if (removed) console.log(`[log] ${LOG_RETENTION_DAYS} günden eski ${removed} kayıt silindi`);
+  } catch (err) {
+    console.error('[log] temizleme hatası:', err.message);
+  }
+}
+
+(async () => {
+  await store.init();
+  console.log(`[log] kayıt deposu: ${store.kind === 'postgres' ? 'Postgres' : 'yerel dosya (data/)'}`);
+  if (!process.env.ADMIN_PASSWORD) console.warn('[admin] ADMIN_PASSWORD tanımlı değil, /admin kapalı');
+
+  await purgeOldLogs();
+  setInterval(purgeOldLogs, 6 * 60 * 60 * 1000).unref();
+
+  server.listen(PORT, () => {
+    console.log(`Mat Sohbet çalışıyor: http://localhost:${PORT}`);
+  });
+})().catch((err) => {
+  console.error('Başlatılamadı:', err);
+  process.exit(1);
 });
